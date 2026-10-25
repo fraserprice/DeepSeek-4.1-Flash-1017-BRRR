@@ -1,0 +1,19 @@
+[project]
+name = "deepseek-4.1-flash-1017-brrr"
+version = "0.1.0"
+description = "Fused decoder-layer kernels for serving DeepSeek-V4.1-Flash-1017 with vLLM on 4x RTX PRO 6000 Blackwell"
+requires-python = "==3.12.*"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+dependencies = ["cyclopts>=4", "httpx>=0.27", "numpy>=2", "pydantic>=2"]
+
+[project.scripts]
+bench = "brrr.bench:app"
+
+[build-system]
+requires = ["uv_build>=0.10.10,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "brrr"
+data = { purelib = "site-packages" }

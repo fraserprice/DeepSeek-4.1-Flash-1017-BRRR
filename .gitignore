@@ -1,0 +1,5 @@
+__pycache__/
+.venv/
+dist/
+.claude/
+.ruff_cache/

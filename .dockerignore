@@ -1,0 +1,9 @@
+*
+!pyproject.toml
+!LICENSE
+!NOTICE
+!src
+!site-packages
+!vllm.patch
+!entrypoint.sh
+**/__pycache__
