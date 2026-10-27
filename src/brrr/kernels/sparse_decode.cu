@@ -150,7 +150,12 @@ __device__ __forceinline__ void decode_keys(const Args& a, Smem& sm, int first, 
     raw[i] = make_uint4(0, 0, 0, 0);
     scale[i] = 0;
     if (slot >= 0) {
-      raw[i] = __ldg(reinterpret_cast<const uint4*>(rec + (swa ? 16 : 8) * lane));
+      if (swa) {
+        raw[i] = __ldg(reinterpret_cast<const uint4*>(rec + 16 * lane));
+      } else {
+        const uint2 r = __ldg(reinterpret_cast<const uint2*>(rec + 8 * lane));
+        raw[i] = make_uint4(r.x, r.y, 0, 0);
+      }
       scale[i] = __ldg(rec + (swa ? D + lane / 2 : D / 2 + lane));
     }
   }

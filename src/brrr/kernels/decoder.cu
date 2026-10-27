@@ -32,6 +32,7 @@ constexpr int SINKHORN = 20;
 constexpr float HC_EPS = 1e-6f;
 constexpr float NORM_EPS = 1e-20f;
 constexpr float ROUTE_SCALE = 1.5f;
+constexpr float FIXED = 0x1p32f;
 
 constexpr int GW = 4;
 constexpr int GT = GW * 32;
@@ -246,7 +247,7 @@ struct Scratch {
   __nv_bfloat16* xbf;
   uint8_t* xq;
   uint8_t* xse;
-  float* gacc;
+  long long* gacc;
   float* topk_w;
   float* sacc;
   uint8_t* hsq;
@@ -646,6 +647,12 @@ __device__ __forceinline__ void red4(float* dst, float4 v) {
   asm volatile("red.global.add.v4.f32 [%0], {%1, %2, %3, %4};" ::"l"(dst), "f"(v.x), "f"(v.y), "f"(v.z), "f"(v.w) : "memory");
 }
 
+__device__ __forceinline__ void red4(long long* dst, float4 v) {
+  asm volatile("red.global.add.u64 [%0], %1;\n\tred.global.add.u64 [%0+8], %2;\n\tred.global.add.u64 [%0+16], %3;\n\tred.global.add.u64 [%0+24], %4;" ::"l"(dst),
+               "l"(__float2ll_rn(v.x * FIXED)), "l"(__float2ll_rn(v.y * FIXED)), "l"(__float2ll_rn(v.z * FIXED)), "l"(__float2ll_rn(v.w * FIXED))
+               : "memory");
+}
+
 __device__ __forceinline__ float4 transpose4(const float* a, int lane) {
   const int i = (lane >> 2) & 3;
   const bool p = i & 1, q = i & 2;
@@ -659,7 +666,8 @@ __device__ __forceinline__ int quad_col(int tt, int lane) { return tt * TILE + 2
 
 __device__ __forceinline__ int quad_row(int lane) { return (lane >> 4) * 4 + ((lane >> 3) & 1) * 8; }
 
-__device__ __forceinline__ void scatter(float* dst, int ld, int row0, const Span& sp, int tt, const float (&a)[4], int lane) {
+template <class T>
+__device__ __forceinline__ void scatter(T* dst, int ld, int row0, const Span& sp, int tt, const float (&a)[4], int lane) {
   const float4 v = transpose4(a, lane);
   const int tok = quad_col(tt, lane);
   if (tok < sp.count) red4(dst + long(sp.first + tok) * ld + row0 + quad_row(lane), v);
@@ -819,9 +827,9 @@ __device__ void job_route(Ctx& c, int tok) {
 #pragma unroll
   for (int i = 0; i < PER; ++i) {
     expert[i] = c.warp * EW + c.lane + 32 * i;
-    float* a = p.s.gacc + tok * EXPERTS + expert[i];
-    const float v = __ldcg(a);
-    __stcg(a, 0.0f);
+    long long* a = p.s.gacc + tok * EXPERTS + expert[i];
+    const float v = __ll2float_rn(__ldcg(a)) / FIXED;
+    __stcg(a, 0LL);
     score[i] = sqrtf(v > 20.0f ? v : logf(1.0f + expf(v)));
     key[i] = score[i] + __ldg(bias + expert[i]);
     if (key[i] != key[i]) key[i] = -1e30f;
@@ -1950,7 +1958,7 @@ int64_t create(std::vector<int64_t> buffers, int64_t rank) {
   e.s.xbf = zeroed<__nv_bfloat16>(long(MAXM) * HID);
   e.s.xq = zeroed<uint8_t>(long(MAXM) * HID);
   e.s.xse = zeroed<uint8_t>(long(MAXM) * SLICES);
-  e.s.gacc = zeroed<float>(long(MAXM) * EXPERTS);
+  e.s.gacc = zeroed<long long>(long(MAXM) * EXPERTS);
   e.s.topk_w = zeroed<float>(ROUTES);
   e.s.sacc = zeroed<float>(long(MAXM) * 2 * INTER);
   e.s.hsq = zeroed<uint8_t>(long(MAXM) * INTER);
