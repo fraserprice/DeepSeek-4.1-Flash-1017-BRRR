@@ -59,6 +59,7 @@ esac
 IFS=, read -ra ids <<< "$gpus"
 ((${#ids[@]} == 4)) || die "--gpus needs exactly four GPUs, got '$gpus'"
 command -v docker >/dev/null || die "docker not found; install Docker and the NVIDIA Container Toolkit"
+bash "$here/p2p.sh" "$gpus"
 
 docker build -t "$name" "$here"
 docker rm -f "$name" >/dev/null 2>&1 || true

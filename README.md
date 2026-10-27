@@ -48,7 +48,7 @@ It adds fused decode kernels and a lot of model/hardware-specific optimisations 
    bash ~/DeepSeek-4.1-Flash-1017-BRRR/serve.sh ~/models/DeepSeek-V4.1-Flash-1017
    ```
 
-The first run builds the image, which pulls the base image and compiles the kernels (will take some time). Later runs reuse it so should be quicker. Add `--background` to keep it serving after you close the terminal; it then restarts on crash and after reboots.
+It first checks GPU-to-GPU (P2P) transfers and, if your system isn't set up for them, shows what it needs to change and asks before changing anything (see [PCIe P2P](#pcie-p2p)). The first run builds the image, which pulls the base image and compiles the kernels (will take some time). Later runs reuse it so should be quicker. Add `--background` to keep it serving after you close the terminal; it then restarts on crash and after reboots.
 
 This serves an OpenAI-compatible API (text, images and tool calls) as `DeepSeek-4.1-Flash-1017-BRRR` on port 8000. Check it with:
 
@@ -59,28 +59,15 @@ curl localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '
 ### Requirements
 
 - 4× RTX PRO 6000 Blackwell (96 GB, any edition).
-- PCIe 5.0 x16 P2P between all four GPUs (see the gotchas below if you are getting poor speeds).
+- PCIe 5.0 x16 P2P between all four GPUs (`serve.sh` checks this and offers to set it up).
 - The weights on a local NVMe drive with ext4 or xfs (Engram tables are read from disk with `O_DIRECT`, so NFS and tmpfs won't work). Note that drive latency will impact decode speeds.
 - x86_64 Linux, NVIDIA driver ≥ 615.65 (the image ships CUDA 13.4), Docker with the NVIDIA Container Toolkit.
 
-#### PCIe gotchas
+#### PCIe P2P
 
-If you are seeing much lower speeds, the usual cause is the IOMMU. It's on if this prints anything but `0`:
+`serve.sh` checks P2P between your GPUs on every run. If it isn't set up, it lists the system settings it needs to change and asks before changing them, then tells you if you need to reboot. If something is still wrong after that (e.g. your board only lets you turn the IOMMU off in the BIOS), it says what and asks whether to serve anyway.
 
-```bash
-ls /sys/kernel/iommu_groups | wc -l
-```
-
-Turn it off and reboot (some boards also need it disabled in the BIOS). Ask your clanker or try the following:
-
-```bash
-# GRUB (Ubuntu, Debian, ...)
-sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT="/&iommu=off amd_iommu=off intel_iommu=off /' /etc/default/grub && sudo update-grub
-# Fedora, RHEL
-sudo grubby --update-kernel=ALL --args="iommu=off amd_iommu=off intel_iommu=off"
-```
-
-GPUs on different root complexes (`NODE` or `SYS` in `nvidia-smi topo -m`) are handled by the image's `NCCL_P2P_LEVEL=SYS`.
+Why: with the IOMMU on, P2P traffic gets routed through the CPU for address translation, and the NVIDIA driver disables or downgrades P2P on these cards (especially across root complexes) unless forced to. NCCL is already set up for this in the image (`NCCL_P2P_LEVEL=SYS`, `NCCL_P2P_READ_ENABLE=1`).
 
 ### Options
 
